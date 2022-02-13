@@ -1,0 +1,380 @@
+---
+title: 'Lab #1'
+author: "Javendean Naipaul"
+date: "2/7/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+---
+title: "Lab 1"
+author: "Your Name Here"
+output: pdf_document
+date: "11:59PM February 13, 2021"
+---
+
+You should have RStudio installed to edit this file. You will write code in places marked "TO-DO" to complete the problems. Most of this will be a pure programming assignment but there are some questions that instead ask you to "write a few sentences". This is a W class! The tools for the solutions to these problems can be found in the class practice lectures. I prefer you to use the methods I taught you. If you google and find esoteric code you don't understand, this doesn't do you too much good.
+
+To "hand in" the homework, you should first download this file. The best way to do this is by cloning the class repository then copying this file from the folder of that clone into the folder that is your personal class repository. Then do the assignment by filling in the TO-DO's. After you're done, compile this file into a PDF (use the "knit to PDF" button on the submenu above). This PDF will include output of your code. Then push the PDF and this Rmd file by the deadline to your github repository in a directory called "labs".
+
+
+# Basic R Skills
+
+* Print out the numerical constant pi with ten digits after the decimal point using the internal constant `pi`.
+
+```{r}
+print(pi, digits = 10)
+```
+
+* Sum up the first 103 terms of the series 1 + 1/2 + 1/4 + 1/8 + ...
+
+```{r}
+sum(1/(2^((0:103))))
+```
+
+* Find the product of the first 37 terms in the sequence 1/3, 1/6, 1/9  ...
+
+```{r}
+product_elements_37 = c(1/(3*(3*(2:36))))
+final_product_37 = product_elements_37[length(product_elements)]
+```
+
+
+* Find the product of the first 387 terms of `1 * 1/2 * 1/4 * 1/8 *` ...
+
+```{r}
+product_elements_387 = c(1/(2*(2*(2:386))))
+final_product_387 = product_elements_387[length(product_elements_387)]
+```
+
+Is this answer *exactly* correct? 
+  
+#NO.
+
+  
+* Figure out a means to express the answer more exactly. Not compute exactly, but express more exactly.
+
+```{r}
+more_exact_final_product_387 = exp(-log(2)*(sum(0:386)))
+```
+
+* Create the sequence `x = [Inf, 20, 18, ..., -20]`.
+
+```{r}
+vec = c(Inf, seq(from = 20, to = -20, by = -2 ))
+```
+
+Create the sequence `x = [log_3(Inf), log_3(100), log_3(98), ... log_3(-20)]`.
+
+```{r}
+x=log(c(Inf,seq(from = 100, to = -20, by = -2)), base = 3)
+```
+
+Comment on the appropriateness of the non-numeric values.
+
+NAN occurs because you cannot take the log of a negative number.
+-Inf occurs when you take the log of 0.
+
+
+* Create a vector of booleans where the entry is true if `x[i]` is positive and finite.
+
+```{r}
+x > 0 & is.finite(x)
+```
+
+* Locate the indices of the non-real numbers in this vector. Hint: use the `which` function. Don't hesitate to use the documentation via `?which`.
+
+```{r}
+which(is.nan(x)| is.infinite(x),arr.ind = TRUE)
+
+```
+
+* Locate the indices of the infinite quantities in this vector. 
+
+```{r}
+which(is.infinite(x), arr.ind = TRUE)
+```
+
+* Locate the indices of the min and max in this vector. Hint: use the `which.min` and `which.max` functions.
+
+```{r}
+which.min(x)
+which.max(x)
+```
+
+* Count the number of unique values in `x`.
+
+```{r}
+length((unique(x, incomparables = TRUE)))
+```
+
+* Cast `x` to a factor. Do the number of levels make sense?
+
+```{r}
+View(factor(x))#The levels seem to be the "unique values", which would be inf,-inf, NA, and log_3(100), log_3(97), ... , log_3(20). This doesn't make much sense', because it assigns a level for each individual real number in the vector. A better set of levels would be real and non-real.
+```
+
+* Cast `x` to integers. What do we learn about R's infinity representation in the integer data type?
+  
+```{r}
+as.integer(x) #We learn that R represents infinity as something that is not a real number, and can not be converted to an integer.
+```
+
+* Use `x` to create a new vector `y` containing only the real numbers in x.
+
+```{r}
+a = x[-which(is.nan(x)| is.infinite(x),arr.ind = TRUE)]#I used a here because I used y elsewhere in my code.
+```
+
+* Use the left rectangle method to numerically integrate x^2 from 0 to 1 with rectangle width size 1e-6.
+
+```{r}
+delta <- 1E-6
+delta*sum(seq(from = 0, to = 1-delta, by = delta)^2)
+```
+
+
+* Calculate the average of 100 realizations of standard Bernoullis in one line using the `sample` function.
+
+```{r}
+mean(sample(c(0,1), size = 100, replace = TRUE))
+```
+
+
+* Calculate the average of 500 realizations of Bernoullis with p = 0.9 in one line using the `sample` and `mean` functions.
+
+```{r}
+mean(sample(c(0,1), size = 500, replace = TRUE, prob = c(.1,.9)))
+```
+
+
+* Calculate the average of 1000 realizations of Bernoullis with p = 0.9 in one line using `rbinom`.
+
+```{r}
+mean(rbinom(n = 1000, size = 1, prob = c(.1, .9)))
+```
+
+* In class we considered a variable `x_3` which measured "criminality". We imagined L = 4 levels "none", "infraction", "misdimeanor" and "felony". Create a variable `x_3` here with 100 random elements (equally probable). Create it as a nominal (i.e. unordered) factor.
+
+```{r}
+x_3=factor(sample(x = c("none","infraction", "misdemeanor","felony"), size = 100, replace = TRUE, prob = c(rep(.25,4))), ordered = FALSE)
+```
+
+* Use `x_3` to create `x_3_bin`, a binary feature where 0 is no crime and 1 is any crime.
+
+```{r}
+x_3_bin = ifelse(x_3 == "none",0,1)
+```
+
+* Use `x_3` to create `x_3_ord`, an ordered factor variable. Ensure the proper ordinal ordering.
+
+```{r}
+x_3_ord = factor(x = x_3, levels = c("none","infraction", "misdemeanor","felony"),ordered = TRUE)
+```
+
+* Convert this variable into three binary variables without any information loss and put them into a data matrix.
+
+```{r}
+Y = matrix(nrow = length(x_3), ncol = 3)
+Y[,1]= as.numeric(x_3 == "infraction")
+Y[,2]= as.numeric(x_3 == "misdemeanor")
+Y[,3]= as.numeric(x_3 == "felony")
+View(Y)
+```
+
+* What should the sum of each row be (in English)? 
+
+Whether each "person" commited a crime or not, which will be either 0 or 1.
+
+Verify that. 
+
+
+
+```{r}
+table(rowSums(Y))
+```
+
+* How should the column sum look (in English)? 
+It should be the number of infractions, misdemeanors, and felonies, which will be an integer between 0 and 100.
+
+Verify that.
+
+```{r}
+colSums(Y)
+
+```
+
+* Generate a matrix with 100 rows where the first column is realization from a normal with mean 17 and variance 38, the second column is uniform between -10 and 10, the third column is poisson with mean 6, the fourth column in exponential with lambda of 9, the fifth column is binomial with n = 20 and p = 0.12 and the sixth column is a binary variable with exactly 24% 1's dispersed randomly. Name the rows the entries of the `fake_first_names` vector.
+
+```{r}
+fake_first_names = c(
+  "Sophia", "Emma", "Olivia", "Ava", "Mia", "Isabella", "Riley", 
+  "Aria", "Zoe", "Charlotte", "Lily", "Layla", "Amelia", "Emily", 
+  "Madelyn", "Aubrey", "Adalyn", "Madison", "Chloe", "Harper", 
+  "Abigail", "Aaliyah", "Avery", "Evelyn", "Kaylee", "Ella", "Ellie", 
+  "Scarlett", "Arianna", "Hailey", "Nora", "Addison", "Brooklyn", 
+  "Hannah", "Mila", "Leah", "Elizabeth", "Sarah", "Eliana", "Mackenzie", 
+  "Peyton", "Maria", "Grace", "Adeline", "Elena", "Anna", "Victoria", 
+  "Camilla", "Lillian", "Natalie", "Jackson", "Aiden", "Lucas", 
+  "Liam", "Noah", "Ethan", "Mason", "Caden", "Oliver", "Elijah", 
+  "Grayson", "Jacob", "Michael", "Benjamin", "Carter", "James", 
+  "Jayden", "Logan", "Alexander", "Caleb", "Ryan", "Luke", "Daniel", 
+  "Jack", "William", "Owen", "Gabriel", "Matthew", "Connor", "Jayce", 
+  "Isaac", "Sebastian", "Henry", "Muhammad", "Cameron", "Wyatt", 
+  "Dylan", "Nathan", "Nicholas", "Julian", "Eli", "Levi", "Isaiah", 
+  "Landon", "David", "Christian", "Andrew", "Brayden", "John", 
+  "Lincoln"
+)
+n=100
+y = matrix(NA, nrow = n, ncol = 6)
+rownames(y) = fake_first_names
+y[,1] = rnorm(n, 17, sqrt(38))
+y[,2] = runif(n,-10,10)
+y[,3] = rpois(n,6)
+y[,4] = rexp(n, 1/9)
+y[,5] = rbinom(n, size = 20, prob = rep(.12,20))
+y[,6] = sample(c(rep(0,76),rep(1,24)))
+View(y)
+
+```
+
+* Create a data frame of the same data as above except make the binary variable a factor "DOMESTIC" vs "FOREIGN" for 0 and 1 respectively. Use RStudio's `View` function to ensure this worked as desired.
+
+```{r}
+DF = data.frame(y)
+DF$X6 = factor(DF$X6, labels = c("DOMESTIC","FOREIGN"))
+View(DF)
+```
+
+* Print out a table of the binary variable. Then print out the proportions of "DOMESTIC" vs "FOREIGN".
+
+```{r}
+table(DF$X6)
+table(DF$X6)/n
+```
+
+Print out a summary of the whole dataframe.
+
+```{r}
+summary(DF)
+```
+
+* Let `n = 50`. Create a n x n matrix `R` of exactly 50% entries 0's, 25% 1's 25% 2's. These values should be in random locations.
+
+```{r}
+n=50
+R = matrix(sample(c(rep(0,n*n/2),rep(1,n*n/4),rep(2,n*n/4))), nrow = n, ncol = n)
+```
+
+* Randomly punch holes (i.e. `NA`) values in this matrix so that an each entry is missing with probability 30%.
+
+```{r}
+n = 100
+Z = matrix(rnorm(n^2), nrow = n, ncol = n)
+for (i in 1 : n){
+  for (j in 1 : n){
+    if (runif(1) < 0.3){
+      Z[i,j] = NA
+    }
+  }
+}
+View(Z)#I opted not to change this because my pct_missing key in the "lapply" problem later on showed values around 30%, so I figured that it was ok to keep this code. If I were to re-write this, I would've changed if (runif(1) < 0.3) to if (sample(c(0,1), size = 1, replace = FALSE, prob = c(.3,7)) = 0), and kept the rest of the for loop.
+```
+
+* Sort the rows in matrix `R` by the largest row sum to lowest. Be careful about the NA's!
+
+```{r}
+sort(rowSums(R, na.rm = TRUE, dims= 1),decreasing = TRUE)
+```
+
+* We will now learn the `apply` function. This is a handy function that saves writing for loops which should be eschewed in R. Use the apply function to compute a vector whose entries are the standard deviation of each row. Use the apply function to compute a vector whose entries are the standard deviation of each column. Be careful about the NA's! This should be one line.
+
+```{r}
+apply(Z,2,sd,na.rm=TRUE)
+```
+
+* Use the `apply` function to compute a vector whose entries are the count of entries that are 1 or 2 in each column. This should be one line.
+
+```{r}
+apply(R == 1 | R == 2, 2,sum,na.rm=TRUE)
+```
+
+* Use the `split` function to create a list whose keys are the column number and values are the vector of the columns. Look at the last example in the documentation `?split`.
+
+```{r}
+split(x = cbind(Z), f = col(Z))
+```
+
+* In one statement, use the `lapply` function to create a list whose keys are the column number and values are themselves a list with keys: "min" whose value is the minimum of the column, "max" whose value is the maximum of the column, "pct_missing" is the proportion of missingness in the column and "first_NA" whose value is the row number of the first time the NA appears.
+
+```{r}
+lapply(split(x = cbind(Z), f = col(Z)),function(x){
+  list_NA = which(is.na(x), arr.ind = TRUE)
+  as.list(c(min = min(x,na.rm=TRUE),
+            max = max(x,na.rm=TRUE),
+            pct_missing =  length(list_NA)/length(x),
+            first_NA = list_NA[1])
+  )
+}
+)
+```
+
+* Set a seed and then create a vector `v` consisting of a sample of 1,000 iid normal realizations with mean -10 and variance 100.
+
+```{r}
+set.seed(12334)
+v=c(rnorm(1000, -10, 100))
+```
+
+* Repeat this exercise by resetting the seed to ensure you obtain the same results.
+
+```{r}
+set.seed(12334)
+v=c(rnorm(1000, -10, 100))
+```
+
+* Find the average of `v` and the standard error of `v`.
+
+```{r}
+mean(v)
+sd(v)
+```
+
+* Find the 5%ile of `v` and use the `qnorm` function to compute what it theoretically should be. Is the estimate about what is expected by theory?
+
+```{r}
+quantile(v, .05)
+qnorm(.05, -10, 100) #Yes it is.
+```
+
+* What is the percentile of `v` that corresponds to the value 0? What should it be theoretically? Is the estimate about what is expected by theory?
+
+```{r}
+inverse_quantile_obj=ecdf(v)
+inverse_quantile_obj(0)#it's about 55.7%, and yes, this is pretty close to the theoretical value (about 54%)
+
+```
+
+
