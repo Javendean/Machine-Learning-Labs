@@ -1,0 +1,269 @@
+---
+title: "Lab 4"
+author: "Javendean Naipaul"
+output: pdf_document
+date: 
+---
+
+Load up the famous iris dataset. We are going to do a different prediction problem. Imagine the only input x is Species and you are trying to predict y which is Petal.Length. A reasonable prediction is the average petal length within each Species. Prove that this is the OLS model by fitting an appropriate `lm` and then using the predict function to verify.
+
+```{r}
+data(iris)
+mod = lm(Petal.Length~Species, iris)
+predict(mod, newdata = data.frame(Species = c("setosa", "versicolor", "virginica")))
+mean(iris$Petal.Length[iris$Species == "setosa"])
+mean(iris$Petal.Length[iris$Species == "versicolor"])
+mean(iris$Petal.Length[iris$Species == "virginica"])
+
+```
+
+Construct the design matrix with an intercept, X without using `model.matrix`.
+
+```{r}
+X = cbind(1,iris$Species == "setosa",iris$Species == "versicolor")
+head(X)
+tail(X)
+```
+
+Find the hat matrix H for this regression.
+
+```{r}
+H = X%*%solve(t(X)%*%X)%*%t(X)
+```
+
+Verify this hat matrix is symmetric using the `expect_equal` function in the package `testthat`.
+
+```{r}
+pacman::p_load(testthat)
+expect_equal(t(H),H)
+```
+
+Verify this hat matrix is idempotent using the `expect_equal` function in the package `testthat`.
+
+```{r}
+expect_equal(H%*%H,H)
+```
+
+Using the `diag` function, find the trace of the hat matrix.
+
+```{r}
+sum(diag(H))
+```
+
+It turns out the trace of a hat matrix is the same as its rank! But we don't have time to prove these interesting and useful facts..
+
+For masters students: create a matrix X-perpendicular.
+
+```{r}
+#TO-DO
+```
+
+Using the hat matrix, compute the yhat vector and using the projection onto the residual space, compute the e vector and verify they are orthogonal to each other.
+
+```{r}
+y = iris$Petal.Length
+yhat = H%*%y
+e_vec = y-yhat
+t(e_vec)%*%yhat
+```
+
+Compute SST, SSR and SSE and R^2 and then show that SST = SSR + SSE.
+
+```{r}
+ybar  = mean(y)
+SST = sum((y-ybar)^2)
+SSR = sum((yhat-ybar)^2)
+SSE = sum(e_vec^2)
+Rsq = SSR/SST
+
+expect_equal(SSR+SSE, SST)
+```
+
+Find the angle theta between y - ybar 1 and yhat - ybar 1 and then verify that its cosine squared is the same as the R^2 from the previous problem.
+
+```{r}
+u = y - ybar
+v = yhat - ybar
+normSq = function(t){
+  sum(t^2)
+}
+norm = function(d){
+  sqrt(normSq(d))
+}
+theta = acos(norm(t(u)%*%v)/(norm(u)*norm(v)))
+theta
+cos(theta^2)
+```
+
+Project the y vector onto each column of the X matrix and test if the sum of these projections is the same as yhat.
+
+```{r}
+yhat_prime = c(rep(0,length(yhat)))
+ncol(X)
+for (j in 1:ncol(X)) {
+  yhat_prime = yhat_prime +(X[,j]%*%t(X[,j])/ normSq(X[,j]))%*%y
+}
+head(yhat)
+head(yhat_prime)
+```
+
+Construct the design matrix without an intercept, X, without using `model.matrix`.
+
+```{r}
+X = cbind(
+  as.numeric(iris$Species == "virginica"),
+  as.numeric(iris$Species == "setosa"),
+  as.numeric(iris$Species == "versicolor")
+  )
+colSums(X)
+```
+
+Find the OLS estimates using this design matrix. It should be the sample averages of the petal lengths within species.
+
+```{r}
+solve(t(X)%*%X)%*%t(X)%*%y
+```
+
+Verify the hat matrix constructed from this design matrix is the same as the hat matrix constructed from the design matrix with the intercept. (Fact: orthogonal projection matrices are unique).
+
+```{r}
+H_prime = X%*%solve(t(X)%*%X)%*%t(X)
+expect_equal(H_prime,H)
+```
+
+Project the y vector onto each column of the X matrix and test if the sum of these projections is the same as yhat.
+
+```{r}
+yhat_prime = c(rep(0,length(yhat)))
+ncol(X)
+for (j in 1:ncol(X)) {
+  yhat_prime = yhat_prime +(X[,j]%*%t(X[,j])/ normSq(X[,j]))%*%y
+}
+head(yhat)
+head(yhat_prime)
+```
+
+Convert this design matrix into Q, an orthonormal matrix.
+
+```{r}
+v_1 = X[,1]
+v_2 = X[,2] - (v_1%*%t(v_1)/normSq(v_1))%*%X[,2]
+v_3 = X[,3] - (v_1%*%t(v_1)/normSq(v_1))%*%X[,3] - (v_2%*%t(v_2)/normSq(v_2))%*%X[,3]
+q_1 = v_1/norm(v_1)
+q_2 = v_2/norm(v_2)
+q_3 = v_3/norm(v_3)
+Q = cbind(q_1,q_2,q_3)
+```
+
+Project the y vector onto each column of the Q matrix and test if the sum of these projections is the same as yhat.
+
+```{r}
+yhat_prime = c(rep(0,length(yhat)))
+ncol(Q)
+for (j in 1:ncol(Q)) {
+  yhat_prime = yhat_prime +(Q[,j]%*%t(Q[,j])/ normSq(Q[,j]))%*%y
+}
+head(yhat)
+head(yhat_prime)
+```
+
+Find the p=3 linear OLS estimates if Q is used as the design matrix using the `lm` method. Is the OLS solution the same as the OLS solution for X?
+
+```{r}
+mod_X = lm(y~0+.,data.frame(X))
+mod_Q = lm(y~0+.,data.frame(Q))
+```
+
+Use the predict function and ensure that the predicted values are the same for both linear models: the one created with X  as its design matrix and the one created with Q as its design matrix.
+
+```{r}
+mod_X$fitted.values
+mod_Q$fitted.values
+```
+
+
+Clear the workspace and load the boston housing data and extract X and y. The dimensions are n = 506 and p = 13. Create a matrix that is (p + 1) x (p + 1) full of NA's. Label the columns the same columns as X. Do not label the rows. For the first row, find the OLS estimate of the y regressed on the first column only and put that in the first entry. For the second row, find the OLS estimates of the y regressed on the first and second columns of X only and put them in the first and second entries. For the third row, find the OLS estimates of the y regressed on the first, second and third columns of X only and put them in the first, second and third entries, etc. For the last row, fill it with the full OLS estimates.
+
+```{r}
+Boston = MASS::Boston
+y_Boston = Boston[, 14]
+X_Boston = as.matrix(cbind(1, Boston[, 1 : 13]))
+n = 506
+p = 13
+OLS_estimates = matrix(NA, nrow = p+1, ncol = p+1, dimnames = list(NULL,labels(X_Boston)[[2]])) 
+for (i in 1:(p+1)) {
+  X_Vals = as.matrix(X_Boston[,1:i])
+  projections = t(solve(t(X_Vals)%*%X_Vals)%*%t(X_Vals)%*%y)
+  weights = matrix(c(projections,rep(0,ncol(X)-i)))
+  OLS_estimates[i,] = t(weights)
+}
+OLS_estimates
+```
+
+Why are the estimates changing from row to row as you add in more predictors?
+
+#The estimates are changing from row to row as more predictors are added because the predictors "explain" less as more predictors are introduced. 
+
+Create a vector of length p+1 and compute the R^2 values for each of the above models. 
+
+```{r}
+OLS_estimates = ifelse(is.na(OLS_estimates),0,OLS_estimates)
+R_square = c(rep(NA,14))
+y_hat = matrix(0, nrow = 1, ncol = 14)
+y_bar = mean(y_Boston)
+sst = sum((y_Boston-y_bar)^2)
+for (i in 1:14){
+  y_hat = X%*%as.matrix(OLS_estimates[i,])
+  e = y_hat-y_bar
+  ssr = sum(e^2)
+  R_square[i] = ssr /sst
+}
+R_square
+```
+
+
+Is R^2 monotonically increasing? Why?
+
+#Yes R^2 is monotonically increasing. R^2 is monotonically increasing because the number of features is monotonically increasing. The more features you have, the greater the R^2 will be relative to your historical data, regardless of the relevancy of the features you add.
+
+Create a 2x2 matrix with the first column 1's and the next column iid normals. Find the absolute value of the angle (in degrees, not radians) between the two columns in absolute difference from 90 degrees.
+
+```{r}
+n = 100
+X = matrix(rnorm(2 * n), ncol = 2)
+angle = acos(t(X[,1]) %*% X[,2] / sqrt(sum(X[, 1]^2) * sum(X[, 2]^2))) * 180 / pi
+abs(90-angle)
+```
+
+Repeat this exercise `Nsim = 1e5` times and report the average absolute angle.
+
+```{r}
+Nsim = 1e5
+angles = array(NA,Nsim)
+for(i in 1:Nsim){
+  angles[i] = abs(90-(acos(t(X[,1]) %*% X[,2] / sqrt(sum(X[, 1]^2) * sum(X[, 2]^2))) * 180 / pi))
+  
+}
+mean(angles)
+```
+
+Create a n x 2 matrix with the first column 1's and the next column iid normals. Find the absolute value of the angle (in degrees, not radians) between the two columns. For n = 10, 50, 100, 200, 500, 1000, report the average absolute angle over `Nsim = 1e5` simulations.
+
+```{r}
+iterations = c(10, 50, 100, 200, 500, 1000)
+angles = matrix(NA, nrow = Nsim, ncol=length(iterations))
+for(i in 1:length(iterations)){
+  
+  for(j in 1:Nsim){
+    
+    X = matrix(rnorm(2 * iterations[i]), ncol = 2)
+    angles[j,i] = abs(90-(acos(t(X[,1]) %*% X[,2] / sqrt(sum(X[, 1]^2) * sum(X[, 2]^2))) * 180 / pi))
+  }
+  
+}
+colMeans(angles)
+```
+
+What is this absolute angle difference from 90 degrees converging to? Why does this make sense?
+
+#The absolute angle difference from 90 degrees is converginf to 0. This makes sense because the mean of the column with iid standard normals converges to 1 as the number of simulations approach infinity.
