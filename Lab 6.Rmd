@@ -21,14 +21,14 @@ summary(X)
 
 Briefly summarize the documentation on this dataset. What is the data type of each variable? What do you think is the response variable the collectors of this data had in mind?
 
-Year:
-Gender:
-NativeBorn:
-AgeGroup:
-EducGroup:
-Vocab:
-Age:
-Educ:
+Year: Discrete 
+Gender: Nominal Categorcal 
+NativeBorn: Nominal Categorical 
+AgeGroup: Ordinal Categorical
+EducGroup: Nominal Categorical
+Vocab: Discrete 
+Age: Continuous 
+Educ: Continuous
 
 Create two different plots and identify the best-looking plot you can to examine the `age` variable. Save the best looking plot as an appropriately-named PDF.
 
