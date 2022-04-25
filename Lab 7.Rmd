@@ -1,0 +1,469 @@
+---
+title: "Lab 7"
+author: "Javendean Naipaul"
+output: pdf_document
+---
+
+#YARF
+
+For the next labs, I want you to make some use of my package. Make sure you have a JDK installed first
+
+https://www.oracle.com/java/technologies/downloads/
+
+Then try to install rJava
+
+```{r}
+options(java.parameters = "-Xmx4000m")
+pacman::p_load(rJava)
+.jinit()
+```
+
+If you have error, messages, try to google them. Everyone has trouble with rJava!
+
+If you made it past that, please try to run the following:
+
+```{r}
+if (!pacman::p_isinstalled(YARF)){
+  pacman::p_install_gh("kapelner/YARF/YARFJARs", ref = "dev")
+  pacman::p_install_gh("kapelner/YARF/YARF", ref = "dev", force = TRUE)
+}
+pacman::p_load(YARF)
+```
+
+Please try to fix the error messages (if they exist) as best as you can. I can help on slack.
+
+#Rcpp 
+
+We will get some experience with speeding up R code using C++ via the `Rcpp` package.
+
+First, clear the workspace and load the `Rcpp` package.
+
+```{r}
+pacman::p_load(Rcpp)
+```
+
+Create a variable `n` to be 10 and a vaiable `Nvec` to be 100 initially. Create a random vector via `rnorm` `Nvec` times and load it into a `Nvec` x `n` dimensional matrix.
+
+```{r}
+n= 10
+Nvec = 100
+X = matrix(rnorm(n*Nvec), nrow = Nvec)
+```
+
+Write a function `all_angles` that measures the angle between each of the pairs of vectors. You should measure the vector on a scale of 0 to 180 degrees with negative angles coerced to be positive.
+
+```{r}
+all_angles = function(X){
+  n = nrow(X)
+  D = matrix(NA, nrow= n, ncol = n)
+  for(i in 2:(n-1)){
+    for(j in (i+1):n){
+      x_i = X[i,]
+      x_j = X[j,]
+      D[i,j] = acos(sum(x_i*x_j)/sqrt(sum(x_i^2)*sum(x_j^2)))*(180/pi)
+    }
+  }
+  D
+}
+```
+
+Plot the density of these angles.
+
+```{r}
+D = all_angles(X)
+pacman::p_load(ggplot2)
+ggplot(data.frame(angles = c(D))) + 
+  geom_density(aes(x = angles))
+```
+
+Write an Rcpp function `all_angles_cpp` that does the same thing. Use an IDE if you want, but write it below in-line.
+
+```{r}
+cppFunction('
+  
+  NumericMatrix all_angles_cpp(NumericMatrix X){
+    int n = X.nrow();
+    int p = X.ncol();
+    NumericMatrix D(n,n);
+    std::fill(D.begin(), D.end(), NA_REAL);
+    
+    for(int i =0; i<(n-1); i++){
+      for(int j=i+1; j<n; j++){
+        double dot_product = 0;
+        double length_x_i_sq = 0;
+        double length_x_j_sq = 0;
+        
+        for(int k=0; k<p; k++){
+        
+          dot_product += X(i,k) * X(j,k);
+          length_x_i_sq += pow(X(i,k),2);
+          length_x_j_sq += pow(X(j,k),2);
+        }
+        
+        D(i,j) = acos(dot_product/sqrt(length_x_i_sq * length_x_j_sq))*(180.0/M_PI);
+      }
+    }
+    
+    return D;
+  }
+')
+```
+
+Test the time difference between these functions for `n = 1000` and `Nvec = 100, 500, 1000, 5000` using the package `microbenchmark`.  Store the results in a matrix with rows representing `Nvec` and two columns for base R and Rcpp.
+
+```{r}
+Nvecs = c(100, 500, 1000, 5000)
+
+pacman::p_load(microbenchmark)
+
+results_for_time = data.frame(
+  Nvec = numeric(),
+  time_for_base_R = numeric(),
+  time_for_cpp = numeric()
+)
+for (i in 1 : length(Nvecs)){
+  Nvec = Nvecs[i]
+  X = matrix(rnorm(n * Nvecs[i]), nrow = Nvec)
+  res = microbenchmark(
+    base_R = all_angles(X),
+    Rcpp = all_angles_cpp(X),
+    times = 1
+  )
+    results_for_time = rbind(results_for_time, data.frame(
+      Nvec = Nvec,
+      time_for_base_R = res[2,]$time,
+      time_for_cpp = res[1,]$time
+    )
+    )
+}
+
+pacman::p_load(ggplot2)
+ggplot(results_for_time) + 
+  geom_line(aes(x = Nvec, y = time_for_base_R), col = "red") +
+  geom_line(aes(x = Nvec, y = time_for_cpp), col = "blue")
+```
+
+Plot the divergence of performance (in log seconds) over n using a line geometry. Use two different colors for the R and CPP functions. Make sure there's a color legend on your plot. We wil see later how to create "long" matrices that make such plots easier.
+
+```{r}
+ggplot(results_for_time) + 
+  geom_line(aes(x = Nvec, y = log(time_for_base_R),col = "R Time")) +
+  geom_line(aes(x = Nvec, y = log(time_for_cpp), col = "CPP Time")) +
+  xlab("Length of Vector (n)")+
+  ylab("Time (log seconds)")
+```
+
+Let `Nvec = 10000` and vary `n` to be 10, 100, 1000. Plot the density of angles for all three values of `n` on one plot using color to signify `n`. Make sure you have a color legend. This is not easy.
+
+```{r}
+Nvec = 1000
+n = c(10, 100, 1000)
+angleDensities = vector("list", 3)
+for(i in 1:length(n)){
+  
+  X = matrix(rnorm(n[i] * Nvec), nrow = Nvec)
+  
+  angleDensities[[i]] = all_angles_cpp(X)
+}
+ggplot()+
+  geom_density(aes(x=angleDensities[[1]], fill = 'red'), alpha = 0.5)+
+  geom_density(aes(x=angleDensities[[2]], fill = 'blue'), alpha = 0.5)+
+  geom_density(aes(x=angleDensities[[3]], fill = 'green'), alpha = 0.5)+
+  scale_fill_discrete(labels = c("n=10", "n=100", "n=1000"))+
+  xlab("Angle")+
+  ylab("Density")
+```
+
+Write an R function `nth_fibonnaci` that finds the nth Fibonnaci number via recursion but allows you to specify the starting number. For instance, if the sequence started at 1, you get the familiar 1, 1, 2, 3, 5, etc. But if it started at 0.01, you would get 0.01, 0.01, 0.02, 0.03, 0.05, etc.
+
+```{r}
+nth_fib = function(n, s =1){
+if(n <= 2){
+  s
+}else{
+  nth_fib(n-1,s)+nth_fib(n-2,s)
+}
+}
+```
+
+Write an Rcpp function `nth_fib_cpp` that does the same thing. Use an IDE if you want, but write it below in-line.
+
+```{r}
+cppFunction('
+   int nth_fib_cpp(int fibLimit){
+    if(fibLimit <=1){
+      return(fibLimit);
+    }else{
+    
+      return (nth_fib_cpp(fibLimit-1) + nth_fib_cpp(fibLimit-2));
+    }
+   }          
+            
+')
+```
+
+Time the difference in these functions for n = 100, 200, ...., 1500 while starting the sequence at the smallest possible floating point value in R. Store the results in a matrix.
+
+```{r}
+n = c(1,5,10,15,20,25) #R takes too long for n values > 25 
+fib_comp_time = data.frame(
+  n = n,
+  fib_R = numeric(length = length(n)),
+  fib_cpp = numeric(length = length(n))
+)
+for (i in 1 : length(n)){
+  fib_comp_time$fib_R[i] = mean(microbenchmark(r_fib = nth_fib(n[i]), unit = "s")$time)
+  fib_comp_time$fib_cpp[i] = mean(microbenchmark(cpp_fib = nth_fib_cpp(n[i]), unit = "s")$time)
+}
+fib_comp_time
+```
+
+Plot the divergence of performance (in log seconds) over n using a line geometry. Use two different colors for the R and CPP functions. Make sure there's a color legend on your plot.
+
+```{r}
+ggplot(fib_comp_time) + 
+  geom_line(aes(x = n, y = log(fib_R),col = "R Time")) +
+  geom_line(aes(x = n, y = log(fib_cpp), col = "CPP Time")) +
+  xlab("Length of Vector (n)")+
+  ylab("Time (log seconds)")
+```
+
+
+# Trees, bagged trees and random forests
+
+You can use the `YARF` package if it works, otherwise, use the `randomForest` package (the standard).
+
+Let's take a look at a simulated sine curve. Below is the code for the data generating process:
+
+```{r}
+rm(list = ls())
+n = 500
+sigma = 0.3
+x_min = 0
+x_max = 10
+f_x = function(x){sin(x)}
+y_x = function(x, sigma){f_x(x) + rnorm(n, 0, sigma)}
+x_train = runif(n, x_min, x_max)
+y_train = y_x(x_train, sigma)
+```
+
+Plot an example dataset of size 500:
+
+```{r}
+pacman::p_load(ggplot2)
+ggplot(data.frame(cbind(x_train, y_train)))+
+  geom_point(aes(x=x_train, y=y_train))
+```
+
+Create a test set of size 500 as well
+
+```{r}
+x_test = runif(n, x_min, x_max)
+y_test = y_x(x_test, sigma)
+```
+
+Locate the optimal node size hyperparameter for the regression tree model. I believe you can use `randomForest` here by setting `ntree = 1`, `replace = FALSE`, `sampsize = n` (`mtry` is already set to be 1 because there is only one feature) and then you can set `nodesize`. Plot nodesize by out of sample s_e. Plot.
+
+```{r}
+library('randomForest')
+NodeSizes = seq(1,500)
+oos_SE_list = rep(NA,length(NodeSizes))
+for(NodeSize_i in NodeSizes){
+  RandForest_i = randomForest(y_train ~ x_train, nodesize = NodeSize_i, ntree = 1, replace = FALSE, sampsize=n)
+  y_hat = predict(RandForest_i, x_test)
+  residuals = y_test - y_hat
+  oos_SE = sd(residuals)
+  oos_SE_list[NodeSize_i] = oos_SE
+}
+ggplot(data.frame(cbind(NodeSizes, oos_SE_list)))+
+  geom_point(aes(x=NodeSizes, y=oos_SE_list))
+```
+
+Plot the regression tree model g(x) with the optimal node size.
+
+```{r}
+optRandForest = randomForest(y_train ~ x_train, nodesize = 25, ntree = 1, replace = FALSE, sampsize=n)
+ggplot(data.frame(cbind(x_train,y_train)))+
+  geom_point(aes(x=x_train, y=y_train))+
+  geom_line(aes(x=x_train, y=predict(optRandForest, x_test), color = 'yHat'))
+```
+
+Provide the bias-variance decomposition of this DGP fit with this model. It is a lot of code, but it is in the practice lectures. If your three numbers don't add up within two significant digits, increase your resolution.
+
+```{r}
+
+```
+
+
+```{r}
+rm(list = ls())
+```
+
+Take a sample of n = 2000 observations from the diamonds data.
+
+```{r}
+n=2000
+k = 1/5
+diamonds = diamonds[sample(1:nrow(diamonds), n),]
+trainSplit = diamonds[1:(nrow(diamonds)*(1-k)),]
+testSplit = diamonds[(nrow(diamonds)*(1-k)+1):nrow(diamonds),]
+x_train = trainSplit[,2:ncol(trainSplit)]
+y_train = trainSplit$carat
+x_test = testSplit[,2:ncol(testSplit)]
+y_test = testSplit$carat
+x_train
+```
+
+Find the bootstrap s_e for a RF model using 1, 2, 5, 10, 20, 30, 40, 50, 100, 200, 300, 400, 500, 1000 trees. If you are using the `randomForest` package, you can calculate oob residuals via `e_oob = y_train - rf_mod$predicted`. Plot.
+
+```{r}
+trees = c(1,2,5,10,20,30,40,50,100,200,300)
+s_e_List = list()
+for(Index_i in 1:length(trees)){
+    
+    
+    #Bootstrap forests
+    bootstrap_indices = sample(1 : (n*(1-k)), replace = TRUE)
+    
+    Forest_i = YARF(data.frame(x=x_train[bootstrap_indices,]), y_train, calculate_oob_error = FALSE ,num_trees = trees[Index_i])
+ 
+    #Predict
+    y_hats = predict(Forest_i, data.frame(x = x_test))
+    
+    e_oob = y_train - y_hats
+    
+    s_e_List[Index_i] = sd(e_oob)
+}
+ggplot(data.frame(cbind(trees,unlist(s_e_List))))+
+  geom_point(aes(x=trees, y=unlist(s_e_List)))
+```
+
+Using the diamonds data, find the oob s_e for a bagged-tree model using 1, 2, 5, 10, 20, 30, 40, 50, 100, 200, 300, 400, 500, 1000 trees. If you are using the `randomForest` package, you can create the bagged tree model via setting an argument within the RF constructor function. Plot.
+
+```{r}
+trees = c(1,2,5,10,20,30,40,50,100,200,300)
+s_e_List_bagged = list()
+for(Index_i in 1:length(trees)){
+    
+  
+    Forest_i = YARFBAG(data.frame(x=x_train), y_train, calculate_oob_error = FALSE, num_trees = trees[Index_i])
+    #Predict
+    y_hats = predict(Forest_i, data.frame(x = x_test))
+    
+    e_oob = y_train - y_hats
+    
+    s_e_List_bagged[Index_i] = sd(e_oob)
+}
+ggplot(data.frame(cbind(trees,unlist(s_e_List_bagged))))+
+  geom_point(aes(x=trees, y=unlist(s_e_List_bagged)))
+```
+
+
+What is the percentage gain / loss in performance of the RF model vs bagged trees model?
+
+```{r}
+((unlist(s_eList_bagged)-unlist(s_eList))/(unlist(s_eList)))*100
+```
+
+
+Plot oob s_e by number of trees for both RF and bagged trees.
+
+```{r}
+
+```
+
+Build RF models for 500 trees using different `mtry` values: 1, 2, ... the maximum. That maximum will be the number of features assuming that we do not binarize categorical features if you are using `randomForest` or the number of features assuming binarization of the categorical features if you are using `YARF`. Calculate oob s_e for all mtry values. Plot.
+
+```{r}
+mtryList = seq(1,9)
+oos_SE_list = rep(NA,length(mtryList))
+for(Feat_i in mtryList){
+  RandForest_i = randomForest(x_train, y_train, num_trees = 500, mtry = Feat_i,  replace = FALSE)
+  y_hat = predict(RandForest_i, x_test)
+  e_oob = y_train - y_hat
+  oos_SE_list[Feat_i] = sd(e_oob)
+}
+```
+
+Plot oob s_e by mtry.
+
+```{r}
+ggplot(data.frame(cbind(mtryList, oos_SE_list)))+
+  geom_point(aes(x=mtryList, y=oos_SE_list)) 
+```
+
+```{r}
+rm(list = ls())
+```
+
+
+Take a sample of n = 2000 observations from the adult data.
+
+```{r}
+rm(list = ls())
+pacman::p_load_gh("coatless/ucidata")
+library("dplyr")
+n_samp = 2000
+adult_samp = adult %>% sample_n(n_samp)
+y = adult_samp$income
+X = adult_samp %>% dplyr::select(-income)
+```
+
+Using the adult data, find the bootstrap misclassification error for an RF model using 1, 2, 5, 10, 20, 30, 40, 50, 100, 200, 300, 400, 500, 1000 trees.
+
+```{r}
+trees = c(1,2,5,10,20,30,40,50,100,200,300) 
+m_error_non_bagged = list()
+m_error_bagged = list()
+for(Trees_i in 1:length(trees)){
+  mod_bag = YARFBAG(X ,y, num_trees = trees[Trees_i])
+  Forest_i = YARF(X, y, num_trees = trees[Trees_i],bootstrap_indices = mod_bag$bootstrap_indices)
+  m_error_non_bagged[Trees_i] = Forest_i$misclassification_error
+  m_error_bagged[Trees_i] = mod_bag$misclassification_error
+}
+```
+
+Using the adult data, find the bootstrap misclassification error for a bagged-tree model using 1, 2, 5, 10, 20, 30, 40, 50, 100, 200, 300, 400, 500, 1000 trees. Plot.
+
+```{r}
+m_error_bagged
+```
+
+What is the percentage gain / loss in performance of the RF model vs bagged trees model?
+
+```{r}
+((unlist(m_error_bagged)-unlist(m_error_rf))/(unlist(m_error_rf)))*100
+```
+
+Plot bootstrap misclassification error by number of trees for both RF and bagged trees.
+
+```{r}
+#TO-DO
+```
+
+Build RF models for 500 trees using different `mtry` values: 1, 2, ... the maximum (see above as maximum is defined by the specific RF algorithm implementation). Plot.
+
+```{r}
+mtryList = seq(1,10) #R takes too long for more than 10.
+m_error_boot = list()
+maxTrees = 200 #Anything more than 200 takes too much memory.
+for(Feat_i in mtryList){
+  
+  mod_bag = YARFBAG(X ,y, num_trees = maxTrees)
+  RandForest_i = YARF(X, y, num_trees = maxTrees, mtry = Feat_i, bootstrap_indices = mod_bag$bootstrap_indices)
+  
+  m_error_boot[Feat_i] = mod_bag$misclassification_error
+}
+```
+
+Plot bootstrap misclassification error by `mtry`.
+
+```{r}
+ggplot(data.frame(cbind(mtryList, unlist(m_error_boot))))+
+  geom_point(aes(x=mtryList, y=unlist(m_error_boot))) 
+```
+
+
+```{r}
+rm(list = ls())
+```
