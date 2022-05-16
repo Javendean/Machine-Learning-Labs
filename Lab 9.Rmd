@@ -1,0 +1,448 @@
+---
+title: "Lab 9"
+author: "Javendean Naipaul"
+output: pdf_document
+---
+et the bills data
+
+```{r}
+rm(list = ls())
+pacman::p_load(tidyverse, magrittr, data.table, R.utils)
+bills = fread("bills_dataset/bills.csv.bz2")
+payments = fread("bills_dataset/payments.csv.bz2")
+discounts = fread("bills_dataset/discounts.csv.bz2")
+setnames(bills, "amount", "tot_amount")
+setnames(payments, "amount", "paid_amount")
+head(bills)
+head(payments)
+head(discounts)
+```
+
+The unit we care about is the bill. The y metric we care about will be "paid in full" which is 1 if the company paid their total amount (we will generate this y metric later).
+
+Since this is the response, we would like to construct the very best design matrix in order to predict y.
+
+I will create the basic steps for you guys. First, join the three datasets in an intelligent way. You will need to examine the datasets beforehand.
+
+```{r}
+bills_with_payments = merge(bills, payments, all.x = TRUE, by.x = "id", by.y = "bill_id")
+bills_with_payments[, id.y := NULL]
+bills_with_payments_with_discounts = merge(bills_with_payments, discounts, all.x = TRUE, by.x = "discount_id", by.y = "id")
+colnames(bills_with_payments_with_discounts)
+setorder(bills_with_payments_with_discounts, id) #id will include time order
+```
+
+Now create the binary response metric `paid_in_full` as the last column and create the beginnings of a design matrix `bills_data`. Ensure the unit / observation is bill i.e. each row should be one bill! 
+
+```{r}
+bills_with_payments_with_discounts[, total_paid := sum(paid_amount, na.rm = TRUE), by = id]
+bills_with_payments_with_discounts[, paid_bill := total_paid >= tot_amount, by = id]
+bills_data = bills_with_payments_with_discounts[, .(paid_in_full = any(paid_bill)), by = id]
+table(bills_data$paid_in_full, useNA = "always")
+```
+
+How should you add features from transformations (called "featurization")? What data type(s) should they be? Make some features below if you think of any useful ones. Name the columns appropriately so another data scientist can easily understand what information is in your variables.
+
+```{r}
+#convert discount types to factors and include missingness as a legal level
+bills_with_payments_with_discounts[, discount_num_days := factor(num_days, exclude = NULL)]
+bills_with_payments_with_discounts[, discount_pct_off := factor(pct_off, exclude = NULL)]
+bills_with_payments_with_discounts[, discount_days_until_discount := factor(days_until_discount, exclude = NULL)]
+#compute number of days bill is due in
+pacman::p_load(lubridate)
+bills_with_payments_with_discounts[, num_days_to_pay := as.integer(ymd(due_date) - ymd(invoice_date))]
+bills_data = bills_with_payments_with_discounts[, .(
+    paid_in_full = as.integer(any(paid_bill)), 
+    customer_id = first(customer_id),
+    tot_amount = first(tot_amount),
+    num_days_to_pay = first(num_days_to_pay),
+    discount_num_days = first(discount_num_days),
+    discount_pct_off = first(pct_off),
+    discount_days_until_discount = first(days_until_discount)
+  ), by = id]
+#how many bills did this customer have previously?
+bills_data[, num_previous_bills := 0 : (.N - 1), by = customer_id]
+#and how many of those did he pay on time?
+bills_data[, num_previous_bills_paid_on_time := cumsum(paid_in_full), by = customer_id]
+bills_data[, customer_id := NULL] #no need for customer id anymore; it won't be a feature
+#maybe some other derived features may be important
+bills_data[, pct_previous_payments := num_previous_bills_paid_on_time / num_previous_bills]
+bills_data[, dollars_owed_per_day := tot_amount / num_days_to_pay]
+#to force classification, set y to be a factor
+bills_data[, paid_in_full := factor(paid_in_full)]
+#ggplot(bills_data) + geom_histogram(aes(x = dollars_owed_per_day), bins = 100) + xlim(0, 25000)
+```
+
+Now let's do this exercise. Let's retain 25% of our data for test.
+
+```{r}
+K = 4
+test_indices = sample(1 : nrow(bills_data), round(nrow(bills_data) / K))
+train_indices = setdiff(1 : nrow(bills_data), test_indices)
+bills_data_test = bills_data[test_indices, ]
+bills_data_train = bills_data[train_indices, ]
+```
+
+Now try to build a classification tree model for `paid_in_full` with the features (use the `Xy` parameter in `YARF`). If you cannot get `YARF` to install, use the package `rpart` (the standard R tree package) instead. You will need to install it and read through some documentation to find the correct syntax.
+
+Warning: this data is highly anonymized and there is likely zero signal! So don't expect to get predictive accuracy. The value of the exercise is in the practice. I think this exercise (with the joining exercise above) may be one of the most useful exercises in the entire semester and great training for the final project.
+
+```{r}
+options(java.parameters = "-Xmx5g")
+pacman::p_load(YARF)
+#YARF can't handle this large dataset so let's pare it down
+n_sub_train = 20000
+bills_data_train_sub = bills_data_train[sample(1 : .N, n_sub_train)]
+Xtrain = bills_data_train_sub[, -"paid_in_full"]
+ytrain = bills_data_train_sub[, paid_in_full]
+classification_tree_mod = YARFCART(Xtrain, ytrain)
+```
+
+For those of you who installed `YARF`, what are the number of nodes and depth of the tree? 
+
+```{r}
+get_tree_num_nodes_leaves_max_depths(classification_tree_mod)
+```
+
+For those of you who installed `YARF`, print out an image of the tree.
+
+```{r}
+illustrate_trees(classification_tree_mod)
+```
+
+Predict on the test set and report the misclassifcation error
+
+```{r}
+Xtest = bills_data_test[, -"paid_in_full"]
+ytest = bills_data_test[, paid_in_full]
+yhat_test = predict(classification_tree_mod, Xtest)
+```
+
+Report the following error metrics: misclassifcation error, precision, recall, F1, FDR, FOR.
+and compute a confusion matrix.
+
+```{r}
+conf_matrix = table(ytest, yhat_test)
+
+n = sum(conf_matrix)
+fp = conf_matrix[1,2]
+fn = conf_matrix[2,1]
+tp = conf_matrix[2,2]
+tn = conf_matrix[1,1]
+
+pp = sum(conf_matrix[,2])
+pn = sum(conf_matrix[,1])
+
+pos = sum(conf_matrix[2,])
+neg = sum(conf_matrix[1,])
+
+missclass_error = (fn+fp)/n
+precision = tp/pp
+recall = tp/pos
+F1 = 2/((1/recall)+(1/precision))
+FDR = 1-precision
+FOR = fn/pn
+
+fp
+fn
+tp
+tn
+pp
+pn
+pos
+neg
+missclass_error
+precision
+recall
+F1
+FDR
+FOR
+
+```
+
+Is this a good model? (yes/no and explain).
+
+
+There are probability asymmetric costs to the two types of errors. Assign the costs below and calculate oos total cost.
+
+```{r}
+```
+
+We now wish to do asymmetric cost classification. Fit a logistic regression model to this data.
+
+```{r}
+logistic_mod = glm(ytrain ~ ., Xtrain, family = binomial(link = "logit"))
+
+p_hats_test = predict(logistic_mod, Xtest, type="response")
+
+levels(Xtrain$discount_num_days)
+```
+
+Use the function from class to calculate all the error metrics for the values of the probability threshold being 0.001, 0.002, ..., 0.999 in a data frame.
+
+```{r}
+bills_data_train
+compute_metrics_prob_classifier = function(p_hats, y_true, res = 0.001){
+  #we first make the grid of all prob thresholds
+  p_thresholds = seq(0 + res, 1 - res, by = res) #values of 0 or 1 are trivial
+  
+  #now we create a matrix which will house all of our results
+  performance_metrics = matrix(NA, nrow = length(p_thresholds), ncol = 12)
+  colnames(performance_metrics) = c(
+    "p_th",
+    "TN",
+    "FP",
+    "FN",
+    "TP",
+    "miscl_err",
+    "precision",
+    "recall",
+    "FDR",
+    "FPR",
+    "FOR",
+    "miss_rate"
+  )
+  
+  #now we iterate through each p_th and calculate all metrics about the classifier and save
+  n = length(y_true)
+  for (i in 1 : length(p_thresholds)){
+    p_th = p_thresholds[i]
+    
+    y_hats = factor(ifelse(p_hats >= p_th, 1, 0))
+    
+    confusion_table = table(
+      factor(y_true, levels = c(0, 1)),
+      factor(y_hats, levels = c(0, 1))
+    )
+      
+    fp = confusion_table[1, 2]
+    fn = confusion_table[2, 1]
+    tp = confusion_table[2, 2]
+    tn = confusion_table[1, 1]
+    npp = sum(confusion_table[, 2])
+    npn = sum(confusion_table[, 1])
+    np = sum(confusion_table[2, ])
+    nn = sum(confusion_table[1, ])
+  
+    performance_metrics[i, ] = c(
+      p_th,
+      tn,
+      fp,
+      fn,
+      tp,
+      (fp + fn) / n,
+      tp / npp, #precision
+      tp / np,  #recall
+      fp / npp, #false discovery rate (FDR)
+      fp / nn,  #false positive rate (FPR)
+      fn / npn, #false omission rate (FOR)
+      fn / np   #miss rate
+    )
+  }
+  
+  #finally return the matrix
+  performance_metrics
+}
+
+performance_metrics_oos = compute_metrics_prob_classifier(p_hats_test, y_test) %>% data.table
+performance_metrics_oos
+```
+
+Calculate the column `total_cost` and append it to this data frame.
+
+```{r}
+r_tp = 0
+r_tn = 0 
+
+#A false positive would be realized here as a customer who was predicted to pay back the money owed but don't, so a false positive would be a loss of the entire amount loaned.
+C_p = 50000
+
+#A false negative would be realized here as a customer who was predicted to not pay back the money owed. The loss here would be the difference between the fee paid to the loan collecting agency employed and the total amount loaned.  
+C_n = 10000
+
+
+performance_metrics_oos$total_cost =
+    (
+      r_tp * performance_metrics_oos$TP+
+      r_tn * performance_metrics_oos$TN+
+      C_p * performance_metrics_oos$FP+
+      C_n * performance_metrics_oos$FN
+    )
+
+
+performance_metrics_oos$total_cost
+```
+
+Which is the winning probability threshold value and the total cost at that threshold?
+
+```{r}
+winning_thresh = which.min(performance_metrics_oos$total_cost)
+
+performance_metrics_oos[winning_thresh,]
+```
+
+Plot an ROC curve and interpret.
+
+```{r}
+ggplot(performance_metrics_oos)+
+  geom_line(aes(x=FPR,y=recall))+
+  geom_abline(intercept = 0, slope=1, col = "red")+
+  coord_fixed() +xlim(0,1)+ylim(0,1)
+```
+
+#TO-DO interpretation (run the chunk above for me and send a pic of the graph)
+
+Calculate AUC and interpret.
+
+```{r}
+#Trapezoidal rule from pracma seems to be inaccurate. There is no way the red line is 50% and our black line only accounts for 8% more area
+
+pacman::p_load(pracma)
+-trapz(performance_metrics_oos$FPR, performance_metrics_oos$recall)
+
+```
+
+#TO-DO interpretation (run the chunk above for me and send a pic of the graph)
+
+Plot a DET curve and interpret.
+
+```{r}
+ggplot(performance_metrics_oos)+
+  geom_line(aes(x=FDR,y=FOR))+
+  coord_fixed() +xlim(0,1)+ylim(0,1)  
+
+```
+
+Model keeps performing better until it hits a very small interval somewhere within ~ [.35-.4], but then keeps getting better again.
+
+
+# The Forward Stepwise Procedure for Probability Estimation Models
+
+
+Set a seed and load the `adult` dataset and remove missingness and randomize the order.
+
+```{r}
+set.seed(1)
+pacman::p_load_gh("coatless/ucidata")
+data(adult)
+adult = na.omit(adult)
+adult = adult[sample(1 : nrow(adult)), ]
+```
+
+Copy from the previous lab all cleanups you did to this dataset.
+
+```{r}
+adult$fnlwgt = NULL
+adult$occupation = NULL
+adult$native_country = NULL
+
+```
+
+
+We will be doing model selection. We will split the dataset into 3 distinct subsets. Set the size of our splits here. For simplicitiy, all three splits will be identically sized. We are making it small so the stepwise algorithm can compute quickly. If you have a faster machine, feel free to increase this.
+
+```{r}
+Nsplitsize = 1000
+```
+
+Now create the following variables: `Xtrain`, `ytrain`, `Xselect`, `yselect`, `Xtest`, `ytest` with `Nsplitsize` observations. Binarize the y values. 
+
+```{r}
+Xtrain = adult[1 : Nsplitsize, ]
+Xtrain$income = NULL
+ytrain = ifelse(adult[1 : Nsplitsize, "income"] == ">50K", 1, 0)
+Xselect = adult[(Nsplitsize + 1) : (2 * Nsplitsize), ]
+Xselect$income = NULL
+yselect = ifelse(adult[(Nsplitsize + 1) : (2 * Nsplitsize), "income"] ==">50K", 1, 0)
+Xtest = adult[(2 * Nsplitsize + 1) : (3 * Nsplitsize), ]
+Xtest$income = NULL
+ytest = ifelse(adult[(2 * Nsplitsize + 1) : (3 * Nsplitsize), "income"] == ">50K", 1, 0)
+```
+
+Fit a vanilla logistic regression on the training set.
+
+```{r}
+logistic_mod = glm(ytrain ~ ., Xtrain, family = "binomial")
+```
+
+and report the log scoring rule, the Brier scoring rule.
+
+```{r}
+p_hats_test = predict(logistic_mod, Xtest, type = "response")
+```
+
+We will be doing model selection using a basis of linear features consisting of all first-order interactions of the 14 raw features (this will include square terms as squares are interactions with oneself). 
+
+Create a model matrix from the training data containing all these features. Make sure it has an intercept column too (the one vector is usually an important feature). Cast it as a data frame so we can use it more easily for modeling later on. We're going to need those model matrices (as data frames) for both the select and test sets. So make them here too (copy-paste). Make sure their dimensions are sensible.
+
+```{r}
+Xmm_train = data.frame(model.matrix(~., Xtrain))
+Xmm_select = data.frame(model.matrix(~., Xselect))
+Xmm_test = data.frame(model.matrix(~.,Xtest))
+dim(Xmm_train)
+dim(Xmm_select)
+dim(Xmm_test)
+```
+
+Write code that will fit a model stepwise. You can refer to the chunk in the practice lecture. Use the negative Brier score to do the selection. The negative of the Brier score is always positive and lower means better making this metric kind of like s_e so the picture will be the same as the canonical U-shape for oos performance. 
+
+Run the code and hit "stop" when you begin to the see the Brier score degrade appreciably oos. Be patient as it will wobble.
+
+```{r}
+pacman::p_load(Matrix)
+p_plus_one = ncol(Xmm_train)
+predictor_by_iteration = c() #keep a growing list of predictors by iteration
+in_sample_brier_by_iteration = c() #keep a growing list of briers by iteration
+oos_brier_by_iteration = c() #keep a growing list of briers by iteration
+i = 1
+
+repeat {
+  all_briers = array(NA, p_plus_one)
+  
+  for(j_try in 1:p_plus_one){
+    
+    if (j_try %in% predictor_by_iteration){
+      next
+    }
+    Xmm_sub = Xmm_train[,c(predictor_by_iteration, j_try), drop=FALSE]
+    log_mod = glm(ytrain ~., Xmm_sub, type = "binomial")
+    phat_train = predict(log_mod, Xmm_sub, type = "response")
+    
+    all_briers[j_try] = -mean(-(ytrain-phat_train)^2)
+  }
+  
+  jstar = which.max(all_briers)
+  
+  predictor_by_iteration =  c(predictor_by_iteration, jstar)
+  
+  in_sample_brier_by_iteration = c(in_sample_brier_by_iteration, jstar)
+  
+  
+  Xmm_sub = Xmm_train[,predictor_by_iteration, drop = FALSE]
+  log_mod = glm(yselect ~., Xmm_sub, type = "binomial")
+  phat_select = predict(log_mod, Xmm_sub, type = "response")
+  oos_brier = mean(-(yselect-phat_select)^2)
+  
+  oos_brier_by_iteration = c(oos_brier_by_iteration, oos_brier)
+  if (i > Nsplitsize || i > p_plus_one){
+    break
+  }
+}
+```
+
+Plot the in-sample and oos (select set) Brier score by $p$. Does this look like what's expected?
+
+```{r}
+sim = data.frame(
+  
+  iteration = 1: length(in_sample_brier_by_iteration),
+  in_sample_brier_by_iteration = in_sample_brier_by_iteration,
+  oos_brier_by_iteration = oos_brier_by_iteration
+)
+
+
+ggplot(sim)+
+  geom_line(aes(x=iteration, y= in_sample_brier_by_iteration), color = "blue")+
+  geom_line(aes(x=iteration, y = oos_brier_by_iteration), color = "red")
+```
+
